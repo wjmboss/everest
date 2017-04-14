@@ -2,7 +2,7 @@ declare -A hashes
 declare -A branches
 hashes[vale]=8af38afa9ff1f093ba100e3e470462e5f20ca2b1
 branches[vale]=master
-hashes[mitls-fstar]=ab2de767f6a00bb5f77c217c4cbb78d5f8092f31
+hashes[mitls-fstar]=f73b0dcf05ace1fe082dece478a3f5ff96088bb4
 branches[mitls-fstar]=taramana_mitls_handshake_mem
 hashes[FStar]=dff96af3850fc07a1bbe1a4b398ae33cefb2406a
 branches[FStar]=master
