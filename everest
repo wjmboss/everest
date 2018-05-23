@@ -936,9 +936,12 @@ do_clean ()
     MLCrypto/{,openssl} \
     kremlin \
     hacl-star/{code/curve25519,secure_api} \
+    quackyducky \
+    mitls-fstar/src/lowparse \
     ; do
     make -C "$d" clean
   done
+  make -C mitls-fstar/src/lowparse -f Makefile.LowParse clean
   clean_vale
 }
 
