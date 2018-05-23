@@ -827,6 +827,7 @@ build_mitls () {
   CFLAGS="$MITLS_CFLAGS" \
   make -C mitls-fstar/libs/ffi $parallel_opt && \
   make -C mitls-fstar/src/pki $parallel_opt && \
+  make -C mitls-fstar/src/lowparse -f Makefile.LowParse $parallel_opt && \
   make -C mitls-fstar/src/tls $parallel_opt && \
   make -C mitls-fstar/apps/cmitls $parallel_opt && \
   make -C mitls-fstar/apps/quicMinusNet $parallel_opt
@@ -837,6 +838,11 @@ build_quackyducky () {
   make -C quackyducky/out $parallel_opt -k
 }
 
+build_kremlin () {
+  make -C kremlin $parallel_opt &&
+  make -C kremlin/kremlib $parallel_opt
+}
+
 do_make ()
 {
   setup_env
@@ -845,7 +851,7 @@ do_make ()
 
   declare -A build_commands
   build_commands[FStar]="build_fstar"
-  build_commands[kremlin]="make -C kremlin $parallel_opt"
+  build_commands[kremlin]="build_kremlin"
   build_commands[MLCrypto]="make -C MLCrypto $parallel_opt"
   build_commands[hacl-star]="build_hacl"
   build_commands[mitls-fstar]="build_mitls"
