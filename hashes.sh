@@ -12,3 +12,4 @@ hashes[hacl-star]=94776d1768b9f5817936abf71fe77235592e534e
 branches[hacl-star]=fstar-master
 hashes[kremlin]=3138c12b1d40efdb6257c9f48c388d6334cab078
 branches[kremlin]=master
+branches[quackyducky]=master

@@ -832,6 +832,10 @@ build_mitls () {
   make -C mitls-fstar/apps/quicMinusNet $parallel_opt
 }
 
+build_quackyducky () {
+  make -C quackyducky gen $parallel_opt
+}
+
 do_make ()
 {
   setup_env
@@ -845,9 +849,10 @@ do_make ()
   build_commands[hacl-star]="build_hacl"
   build_commands[mitls-fstar]="build_mitls"
   build_commands[vale]="build_vale"
+  build_commands[quackyducky]="build_quackyducky"
 
   # Order matters.
-  for p in FStar kremlin vale MLCrypto hacl-star mitls-fstar; do
+  for p in FStar kremlin vale MLCrypto hacl-star mitls-fstar quackyducky; do
     # For individual components, we set ALL_PROJECTS=foo
     if [[ ${ALL_PROJECTS/$p/} == $ALL_PROJECTS ]]; then
       continue
@@ -908,6 +913,7 @@ do_verify () {
   verify_commands[vale]="do_verify_vale"
   verify_commands[mitls-fstar]="make -C mitls-fstar/src/tls verify $parallel_opt -k"
   verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
+  verify_commands[quackyducky]="echo nothing to verify for quackyducky yet"
 
   for p in $ALL_PROJECTS; do
     separator
@@ -1137,7 +1143,7 @@ while true; do
       break
       ;;
 
-    vale|FStar|mitls-fstar|kremlin|hacl-star|MLCrypto)
+    vale|FStar|mitls-fstar|kremlin|hacl-star|MLCrypto|quackyducky)
       ALL_PROJECTS=$1
       ;;
 

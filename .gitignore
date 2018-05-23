@@ -6,6 +6,7 @@ mitls-fstar
 MLCrypto
 log
 fstarlang_binaries
+quackyducky
 
 test/_build
 test/test.native
