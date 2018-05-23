@@ -833,7 +833,8 @@ build_mitls () {
 }
 
 build_quackyducky () {
-  make -C quackyducky gen $parallel_opt
+  make -C quackyducky gen $parallel_opt &&
+  make -C quackyducky/out $parallel_opt -k
 }
 
 do_make ()
