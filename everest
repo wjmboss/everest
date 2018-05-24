@@ -834,8 +834,7 @@ build_mitls () {
 }
 
 build_quackyducky () {
-  make -C quackyducky gen $parallel_opt &&
-  make -C quackyducky/out $parallel_opt -k
+  make -C quackyducky gen $parallel_opt
 }
 
 build_kremlin () {
@@ -852,10 +851,10 @@ do_make ()
   declare -A build_commands
   build_commands[FStar]="build_fstar"
   build_commands[kremlin]="build_kremlin"
-  build_commands[MLCrypto]="make -C MLCrypto $parallel_opt"
-  build_commands[hacl-star]="build_hacl"
-  build_commands[mitls-fstar]="build_mitls"
-  build_commands[vale]="build_vale"
+#  build_commands[MLCrypto]="make -C MLCrypto $parallel_opt"
+#  build_commands[hacl-star]="build_hacl"
+#  build_commands[mitls-fstar]="build_mitls"
+#  build_commands[vale]="build_vale"
   build_commands[quackyducky]="build_quackyducky"
 
   # Order matters.
@@ -881,13 +880,14 @@ do_test () {
   separator
   blue "Running tests (commands shown below)"
   set -x
-  hacl-star/secure_api/out/vale_aes_concrete_id/krml-test.exe
-  hacl-star/secure_api/out/hacl_aes_concrete_id/krml-test.exe
-  make -C hacl-star/secure_api -f Makefile.extract test $keep_going_opt
+#  hacl-star/secure_api/out/vale_aes_concrete_id/krml-test.exe
+#  hacl-star/secure_api/out/hacl_aes_concrete_id/krml-test.exe
+#  make -C hacl-star/secure_api -f Makefile.extract test $keep_going_opt
   # These tests make assumption on their current working directory
-  (cd mitls-fstar/src/tls && make $parallel_opt $keep_going_opt test)
-  (cd mitls-fstar/apps/cmitls && make $keep_going_opt test)
-  (cd mitls-fstar/apps/quicMinusNet && make $keep_going_opt test)
+#  (cd mitls-fstar/src/tls && make $parallel_opt $keep_going_opt test)
+#  (cd mitls-fstar/apps/cmitls && make $keep_going_opt test)
+#  (cd mitls-fstar/apps/quicMinusNet && make $keep_going_opt test)
+  (cd quackyducky/out && make $parallel_opt test)
   set +x
   separator
 }
@@ -914,13 +914,13 @@ do_verify () {
   setup_env
 
   declare -A verify_commands
-  verify_commands[FStar]="make -C FStar/src ulong $parallel_opt $keep_going_opt"
-  verify_commands[kremlin]="echo nothing to verify for kremlin"
-  verify_commands[hacl-star]="make -C hacl-star $parallel_opt -k verify"
-  verify_commands[vale]="do_verify_vale"
-  verify_commands[mitls-fstar]="make -C mitls-fstar/src/tls verify $parallel_opt -k"
-  verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
-  verify_commands[quackyducky]="echo nothing to verify for quackyducky yet"
+#  verify_commands[FStar]="make -C FStar/src ulong $parallel_opt $keep_going_opt"
+#  verify_commands[kremlin]="echo nothing to verify for kremlin"
+#  verify_commands[hacl-star]="make -C hacl-star $parallel_opt -k verify"
+#  verify_commands[vale]="do_verify_vale"
+  verify_commands[mitls-fstar]="make -C mitls-fstar/src/lowparse verify-all $parallel_opt -k"
+#  verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
+  verify_commands[quackyducky]="make -C quackyducky verify $parallel_opt -k"
 
   for p in $ALL_PROJECTS; do
     separator
@@ -1178,8 +1178,7 @@ while true; do
       ;;
 
     verify)
-#      Disable verification for now
-#      do_verify
+       do_verify
        true
       ;;
 
