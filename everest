@@ -813,7 +813,6 @@ set_openssl () {
 
 build_fstar () {
   make -C FStar/src/ocaml-output $parallel_opt && \
-  make -C FStar/ulib $parallel_opt && \
   make -C FStar/ulib/ml $parallel_opt
 }
 
@@ -838,8 +837,7 @@ build_quackyducky () {
 }
 
 build_kremlin () {
-  make -C kremlin $parallel_opt &&
-  make -C kremlin/kremlib $parallel_opt
+  make -C kremlin $parallel_opt
 }
 
 do_make ()
@@ -910,19 +908,35 @@ do_verify_vale () {
   fi
 }
 
+do_verify_lowparse () {
+  make -C mitls-fstar/src/lowparse -f Makefile.LowParse $parallel_opt -k &&
+  make -C mitls-fstar/src/lowparse verify-all $parallel_opt -k
+}
+
+do_verify_fstar () {
+  make -C FStar/ulib $parallel_opt
+}
+
+do_verify_kremlin () {
+  make -C kremlin/kremlib $parallel_opt
+}
+
 do_verify () {
   setup_env
 
   declare -A verify_commands
-#  verify_commands[FStar]="make -C FStar/src ulong $parallel_opt $keep_going_opt"
-#  verify_commands[kremlin]="echo nothing to verify for kremlin"
+  verify_commands[FStar]="do_verify_fstar"
+  verify_commands[kremlin]="do_verify_kremlin"
 #  verify_commands[hacl-star]="make -C hacl-star $parallel_opt -k verify"
 #  verify_commands[vale]="do_verify_vale"
-  verify_commands[mitls-fstar]="make -C mitls-fstar/src/lowparse verify-all $parallel_opt -k"
+  verify_commands[mitls-fstar]="do_verify_lowparse"
 #  verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
   verify_commands[quackyducky]="make -C quackyducky verify $parallel_opt -k"
 
-  for p in $ALL_PROJECTS; do
+  for p in FStar kremlin mitls-fstar quackyducky ; do
+    if [[ ${ALL_PROJECTS/$p/} == $ALL_PROJECTS ]]; then
+      continue
+    fi
     separator
     blue "Running verification for: $p"
     ${verify_commands[$p]}
@@ -1179,7 +1193,6 @@ while true; do
 
     verify)
        do_verify
-       true
       ;;
 
     test)
