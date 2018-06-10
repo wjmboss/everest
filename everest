@@ -885,7 +885,7 @@ do_test () {
 #  (cd mitls-fstar/src/tls && make $parallel_opt $keep_going_opt test)
 #  (cd mitls-fstar/apps/cmitls && make $keep_going_opt test)
 #  (cd mitls-fstar/apps/quicMinusNet && make $keep_going_opt test)
-  (cd quackyducky/out && make $parallel_opt test)
+  (cd quackyducky/out && NO_QD_VERIFY=1 make $parallel_opt test)
   set +x
   separator
 }
