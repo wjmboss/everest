@@ -15,11 +15,27 @@ set -o pipefail
 # Known URLs, directories and versions
 OPAM_URL=https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.1/opam64.tar.xz
 OPAM_VERSION=4.05.0+mingw64c
-NUGET_URL=https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
-PYTHON_VER=2.7.13
-PYTHON_INSTALL_POINT=https://www.python.org/ftp/python/$PYTHON_VER/python-$PYTHON_VER.amd64.msi
-SCONS_INSTALL_POINT=https://downloads.sourceforge.net/project/scons/scons/2.5.1/scons-2.5.1-amd64-setup.exe
+# Provide for a Python, necessary for scons
+# (all other occurrences of python can use whatever python 2 is in the PATH, be it Windows or Cygwin)
+# NOTE: if you change SCONS_PYTHON_MAJOR and/or SCONS_PYTHON_MINOR, then please also update scons-python-version-test.py
+SCONS_PYTHON_MAJOR=3
+SCONS_PYTHON_MINOR=6
+SCONS_PYTHON_MAJOR_MINOR=$SCONS_PYTHON_MAJOR.$SCONS_PYTHON_MINOR
+SCONS_PYTHON_REVISION=6
+SCONS_PYTHON_VER=$SCONS_PYTHON_MAJOR_MINOR.$SCONS_PYTHON_REVISION
+# NOTE: if you change SCONS_VER, then please also update scons-python-version-test.py
+SCONS_VER=3.0.1
+SCONS_INSTALL_DIR=scons-$SCONS_VER
+SCONS_INSTALL_FILE=$SCONS_INSTALL_DIR.tar.gz
+SCONS_INSTALL_POINT=https://downloads.sourceforge.net/project/scons/scons/$SCONS_VER/$SCONS_INSTALL_FILE
 SED=$(which gsed >/dev/null 2>&1 && echo gsed || echo sed)
+
+# OPAM_AUTO_SETUP defines the opam command-line option to
+# automatically setup environment variables into
+# $EVEREST_ENV_DEST_FILE . By default, it is left empty, but it is set
+# to --auto-setup if everest is run with --yes, i.e. in
+# non-interactive mode
+OPAM_AUTO_SETUP=
 
 # No-interaction when this script is used for CI purposes
 INTERACTIVE=true
@@ -27,6 +43,8 @@ make_non_interactive () {
   INTERACTIVE=false
   export GIT_SSH_COMMAND="ssh -oBatchMode=yes"
   export GIT_TERMINAL_PROMPT=0
+  export OPAMYES=1
+  OPAM_AUTO_SETUP=--auto-setup
 }
 
 # The parallel option, either empty (by default), or -j n,
@@ -141,6 +159,17 @@ write_to_env_dest_file () {
   magenta "Remember to run source \"$EVEREST_ENV_DEST_FILE\" in your terminal afterwards!"
 }
 
+# Append $1 to the (Cygwin) path
+windows_append_path () {
+  path=$(cygpath -m -d "$1")
+  path=$(cygpath "$path")
+  str="
+    # This line automatically added by $0
+    export PATH=\"$path\":\$PATH"
+  write_to_env_dest_file "$str"
+  export PATH="$path":"$PATH"
+}
+
 # Windows requires several tools that can be installed via Visual Studio, but
 # these usually aren't in the PATH. Check in the usual locations, then offer to
 # customize "$EVEREST_ENV_DEST_FILE"
@@ -153,12 +182,7 @@ windows_check_or_modify_env_dest_file () {
     if [ -f "$2"/$1 ]; then
       magenta "$1 found in $2; add to PATH via $EVEREST_ENV_DEST_FILE ? [Yn]"
       if prompt_yes true false; then
-        path=$(cygpath -m -d "$2")
-        path=$(cygpath "$path")
-        str="
-          # This line automatically added by $0
-          export PATH=\"$path\":\$PATH"
-        write_to_env_dest_file "$str"
+        windows_append_path "$2"
       fi
     else
       red "$1 not found in $2, bailing"
@@ -178,13 +202,6 @@ write_z3_env_dest_file () {
   str="
     # This line automatically added by $0
     export PATH=$(pwd)/$1/bin:\$PATH"
-  write_to_env_dest_file "$str"
-}
-
-write_nuget_env_dest_file () {
-  str="
-    # This line automatically added by $0
-    export PATH=$(pwd)/nuget/bin:\$PATH"
   write_to_env_dest_file "$str"
 }
 
@@ -312,6 +329,87 @@ do_update_z3 () {
   fi
 }
 
+# Windows-only: print out the directory of the Python associated to SCons
+windows_scons_python_dir () {
+    PYDIR=$(regtool -q get "/HKLM/Software/Python/PythonCore/$SCONS_PYTHON_MAJOR_MINOR/InstallPath/" || true)
+    if ! [[ -d $PYDIR ]] ; then
+      PYDIR=$(regtool -q get "/HKCU/Software/Python/PythonCore/$SCONS_PYTHON_MAJOR_MINOR/InstallPath/" || true)
+    fi
+    if ! [[ -d $PYDIR ]] ; then
+      red "ERROR: Python $SCONS_PYTHON_MAJOR_MINOR was not installed properly"
+      exit 1
+    fi
+    echo "$PYDIR"
+}
+
+# check_windows_scons: (Windows only) checks if Python 3.x and a
+# corresponding Scons and pywin32 are installed; and if not, propose
+# to install scons and pywin32 along with its required Python
+check_windows_scons ()
+{
+  if command -v scons.bat > /dev/null 2>&1 ; then
+    echo "... scons.bat found in PATH"
+    # Check whether it corresponds to the right expected version of Python
+    scons.bat --file=scons-python-version-test.py
+    echo "... scons is well configured for Python $SCONS_PYTHON_MAJOR_MINOR"
+  else
+    magenta "Warning: scons.bat not found in PATH"
+    if ! PYDIR=$(windows_scons_python_dir) ; then
+      red "ERROR: No Python $SCONS_PYTHON_MAJOR_MINOR found"
+      magenta "Do you want to install Windows Python $SCONS_PYTHON_VER , and scons for that version of Python?"
+      prompt_yes true "exit 1"
+      local python_file_name="python-$SCONS_PYTHON_VER-amd64.exe"
+      wget "https://www.python.org/ftp/python/$SCONS_PYTHON_VER/$python_file_name"
+      chmod +x "$python_file_name"
+      # From: https://docs.python.org/3/using/windows.html
+      "./$python_file_name" /passive
+      PYDIR=$(windows_scons_python_dir)
+    else
+      echo "... Python $SCONS_PYTHON_MAJOR_MINOR found"
+    fi
+    if "$PYDIR/python.exe" "$PYDIR/Scripts/scons.py" -f scons-python-version-test.py ; then
+      echo '... SCons for Python $SCONS_PYTHON_MAJOR_MINOR was detected'
+    else
+      red "No SCons detected for Python $SCONS_PYTHON_MAJOR_MINOR"
+      magenta "Do you want to install SCons $SCONS_VER for Python $SCONS_PYTHON_MAJOR_MINOR ?"
+      prompt_yes true "exit 1"
+      wget $SCONS_INSTALL_POINT
+      tar xf "$SCONS_INSTALL_FILE"
+      pushd "$SCONS_INSTALL_DIR"
+      "$PYDIR/python.exe" setup.py install # --prefix=$scons_target_wdir
+      popd
+      # Test whether SCons was installed properly
+      "$PYDIR/python.exe" "$PYDIR/Scripts/scons.py" -f scons-python-version-test.py
+    fi
+    magenta 'The default scons.bat is installed in a directory that cannot be added to PATH,'
+    magenta 'because that directory contains a python.exe, which would shadow the already'
+    magenta 'existing python command that shall point to a Python 2.x.'
+    magenta 'Do you want to create a new scons.bat and have PATH point to it?'
+    if prompt_yes true false
+    then
+      pydir_dos=$(cygpath -d "$PYDIR")
+      mkdir -p scons
+      echo "$pydir_dos/python.exe $pydir_dos/Scripts/scons.py "'%*' > scons/scons.bat
+      chmod +x scons/scons.bat
+      windows_append_path "$PWD/scons"
+    fi
+  fi
+  # Also test for pywin32
+  echo "checking for pywin32"
+  if ! PYDIR=$(windows_scons_python_dir) ; then
+    red "ERROR: Python $SCONS_PYTHON_MAJOR_MINOR was not installed properly"
+    exit 1
+  fi
+  if "$PYDIR/Scripts/pip.exe" show pywin32 ; then
+    echo "... pywin32 found"
+  else
+    red "pywin32 does not seem to be installed for Python $SCONS_PYTHON_MAJOR_MINOR"
+    magenta "Do you want to install it?"
+    prompt_yes true "exit 1"
+    "$PYDIR/Scripts/pip.exe" install pywin32
+  fi
+}
+
 do_check ()
 {
   blue "Checking environment"
@@ -332,6 +430,7 @@ do_check ()
       prompt_yes "$cygsetup $cygsetup_args --packages=git"
     else
       red "ERROR: git not found; install it via your favorite package manager"
+      exit 1
     fi
   fi
 
@@ -360,7 +459,7 @@ do_check ()
     fi
     echo "... no suspicious cygwin packages"
 
-    if ! (flexlink.exe -help 2>&1 || true) | grep "0.35fdopen2" >/dev/null; then
+    if ! (flexlink.exe -help 2>&1 || true) | grep "fdopen" >/dev/null; then
         red "Warning: you have an unknown version of flexlink"
         red "Please use the version from https://fdopen.github.io/opam-repository-mingw/"
     else
@@ -419,7 +518,13 @@ MSG
       tar -xf 'opam64.tar.xz'
       rm -f 'opam64.tar.xz'
       bash opam64/install.sh
-      opam init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp $OPAM_VERSION --switch $OPAM_VERSION
+      echo "Interactive is: $INTERACTIVE ; auto-setup is: $OPAM_AUTO_SETUP ; dot-profile is: $EVEREST_ENV_DEST_FILE ;"
+      opam init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp $OPAM_VERSION --switch $OPAM_VERSION --dot-profile "$EVEREST_ENV_DEST_FILE" $OPAM_AUTO_SETUP
+      if { ! $INTERACTIVE ; } && ! grep 'opam-init' "$EVEREST_ENV_DEST_FILE"  >/dev/null ; then
+        # --auto-setup might not have worked, so manually do it here.
+        # Do not expand variables in the textual output.
+        echo '. "$HOME/.opam/opam-init/init.sh" > /dev/null 2>/dev/null' >> "$EVEREST_ENV_DEST_FILE"
+      fi
       eval $(opam config env)
     else
       red "ERROR: no ocaml found in PATH"
@@ -497,6 +602,34 @@ OCAML
       and add \"export CAMLP4LIB=C:/OCaml/lib/camlp4\" in your "$EVEREST_ENV_DEST_FILE"
   fi
 
+  # Check for Node.js
+  if ! which node >/dev/null 2>&1 ; then
+    red "ERROR: Node.js doesn\'t seem to be installed"
+    if is_windows ; then
+      magenta "Download it from the internet? [Yn]"
+      prompt_yes true "exit 1"
+      # There is no clean way to determine the latest version of
+      # Node.js available. However, the URL below points to a HTML
+      # page containing a list of files, and there, there is exactly
+      # one link to a .msi file corresponding to 64-bit platforms. So
+      # we just need to extract its name from the page.
+      NODEJS_MSI=$(wget --output-document=- --no-verbose --quiet https://nodejs.org/dist/latest/ | grep -o '"node-[^-]*-x64\.msi"' | sed 's!"!!g')
+      # Check that there are exactly one .msi file there
+      test $(echo "$NODEJS_MSI" | grep -o '\.msi' | wc -l) -eq 1
+      # Finally, launch Windows installer in unattended mode
+      msiexec /i "https://nodejs.org/dist/latest/$NODEJS_MSI" /quiet /passive
+      # Test whether Node.js installed properly
+      # Impossible: Windows PATH has changed, we cannot refresh it
+      # which node > /dev/null 2>&1
+      red "CRITICAL: Windows PATH has changed, please restart a new Cygwin window"
+    else
+      echo 'Please go to https://nodejs.org/ to know how to'
+      echo 'install it on your platform'
+      exit 1
+    fi
+  fi
+  echo "... Node.js found in PATH"
+
   # F# and MS compilers (note: nothing for OSX/Linux right now)
   if is_windows; then
     # note: nothing left, we will use vcvarsall.bat/vsdevcmd.bat instead
@@ -508,67 +641,50 @@ OCAML
 
   do_update_z3
 
-  # We need Nuget for Vale
-  if ! which nuget >/dev/null 2>&1 ; then
-    red "ERROR: nuget doesn\'t seem to be installed"
-    if is_windows; then
-      magenta "Download it from the internet? [Yn]"
-      prompt_yes true "exit 1"
-      mkdir -p nuget/bin && cd nuget/bin && wget $NUGET_URL && chmod a+x nuget.exe && cd ../..
-      magenta "Automatically customize $EVEREST_ENV_DEST_FILE with the nuget path? [Yn]"
-      prompt_yes write_nuget_env_dest_file true
+  # Check whether python points to a python2
+  if which python > /dev/null 2>&1 ; then
+    # nasty: python outputs its version on STDERR
+    if python --version 2>&1 | grep '^Python 2\.' 2>/dev/null ; then
+      echo "... python found in PATH, points to some Python 2.x"
     else
-      echo "Hint: brew install nuget (OSX)"
-      echo "Hint: sudo apt-get install nuget (Ubuntu 16.04)"
-      echo "Hint: most recent versions available at https://dist.nuget.org"
+      red "ERROR: python points to something that is not a Python 2.x"
+      red "Please fix this according to your platform"
       exit 1
     fi
+  else
+    magenta "WARNING: python not found in PATH"
   fi
-  echo "... nuget found in PATH"
 
-  # We need Scons for Vale which needs Python 2.7
+  # Check for Python 2
+  if ! which python2 >/dev/null 2>&1 ; then
+    red "ERROR: python2 not found in PATH"
+    magenta "Do you want to install a Cygwin python2?"
+    find_cygsetup
+    cygcmd="$cygsetup $cygsetup_args --packages=python2"
+    echo "$cygcmd"
+    prompt_yes "$cygcmd"
+  else
+    echo "... python2 found in PATH"
+  fi
+
+  # We need Scons for Vale which needs Python 3
   if is_windows; then
-    if [ -z ${PY27DIR+x} ]; then
-      PY27DIR=$(bash -c "regtool -q get /HKLM/Software/Python/PythonCore/2.7/InstallPath/ || true")
-      if ! [ -d "$PY27DIR" ]; then 
-          PY27DIR=$(bash -c "regtool -q get /HKCU/Software/Python/PythonCore/2.7/InstallPath/ || true")
-      fi
-      if ! [ -d "$PY27DIR" ]; then
-          PY27DIR="/cygdrive/c/Python27"
-      fi
-    fi
-    if ! [ -d $PY27DIR ]; then
-      red "ERROR: Python not found -- install a *WINDOWS* Python 2.7? (y/n)"
-      if prompt_yes true "exit 1"; then
-        wget $PYTHON_INSTALL_POINT
-        chmod a+x python-$PYTHON_VER.amd64.msi
-        msiexec /i python-$PYTHON_VER.amd64.msi /quiet
-        windows_check_or_modify_env_dest_file "python.exe" "$PY27DIR"
-      fi
-    fi
-    PY27VER=$($PY27DIR/python.exe -V 2>&1 | dos2unix | cut -d ' ' -f 2 || true)
-    echo "... Python $PY27VER found at $PY27DIR"
-
-    if ! command -v scons.bat >/dev/null 2>&1; then
-      red "ERROR: scons.bat was not found so scons will need to be installed."
-      red "NOTE: scons requires Python 2.7. Choose the one installed at $PY27DIR in the second page of the scons install wizard."
-      red "Start the install wizard for scons (Y/n)?"
-      if prompt_yes true "exit 1"; then
-        wget $SCONS_INSTALL_POINT
-        chmod a+x scons-2.5.1-amd64-setup.exe
-        ./scons-2.5.1-amd64-setup.exe # requires user interaction - prefer to find a way to run this in quiet mode
-        # sconsetup=./scons-2.5.0-setup.exe  # runs it quiet but doesn't actually install so can't do this
-        windows_check_or_modify_env_dest_file "scons.bat" "$PY27DIR\\Scripts"
-      fi
-    else
-      echo "... scons.bat found in PATH"
-    fi
+    check_windows_scons
   else # *nix
     if ! command -v scons >/dev/null 2>&1; then
       red "ERROR: scons not installed -- please install"
       exit 1
     else
       echo "... scons found in PATH"
+      if ! which python$SCONS_PYTHON_MAJOR_MINOR > /dev/null 2>&1 ; then
+        red "ERROR: python$SCONS_PYTHON_MAJOR_MINOR not found in PATH"
+        red "Please install Python $SCONS_PYTHON_MAJOR_MINOR or higher"
+        exit 1
+      fi
+      echo "... python$SCONS_PYTHON_MAJOR_MINOR found in PATH"
+      # Check whether it corresponds to a Python 3.6 or above
+      python$SCONS_PYTHON_MAJOR_MINOR $(which scons) --file=scons-python-version-test.py
+      echo "... python$SCONS_PYTHON_MAJOR_MINOR is recent enough"
     fi
   fi
 
@@ -603,6 +719,28 @@ OCAML
     magenta "Note: you *may* want to export HACL_HOME=${xpwd}/hacl-star"
 }
 
+get_vale ()
+{
+  if [ ! -d vale ]; then
+    mkdir vale
+  fi
+  vale_version=$(<hacl-star/vale/.vale_version)
+  vale_version=${vale_version%$'\r'}  # remove Windows carriage return, if it exists
+  old_vale_version=none
+  if [ -e vale/bin/.vale_version ]; then
+    old_vale_version=$(<vale/bin/.vale_version)
+    old_vale_version=${old_vale_version%$'\r'}  # remove Windows carriage return, if it exists
+  fi
+  if [ $vale_version != $old_vale_version ]; then
+    wget "https://github.com/project-everest/vale/releases/download/v${vale_version}/vale-release-${vale_version}.zip" -O vale/vale-release.zip
+    rm -rf "vale/vale-release-${vale_version}"
+    unzip -o vale/vale-release.zip -d vale
+    rm -rf "vale/bin"
+    mv "vale/vale-release-${vale_version}/bin" vale/
+    chmod +x vale/bin/*.exe
+  fi
+}
+
 self_update () {
   old_revision=$(git rev-parse HEAD)
   git pull --rebase
@@ -617,7 +755,6 @@ self_update () {
 }
 
 do_pull () {
-  self_update
   source hashes.sh
   source repositories.sh
   echo Reset working copies
@@ -679,6 +816,7 @@ do_reset ()
     git submodule update --init
     cd ..
   done
+  get_vale
 }
 
 do_merge ()
@@ -707,17 +845,20 @@ do_forall ()
   done
 }
 
-run_nuget () {
-  nuget restore vale/tools/Vale/src/packages.config -PackagesDirectory vale/tools/FsLexYacc
-}
-
-# OS-independent scons. Passes $1 to scons.
+# OS-independent scons. chdir to $1, then passes $2 to scons.
 # The return status is that of the last command.
 run_scons () {
+  short_dir="$1"
+  shift
   cmd="$1"
-
+  
+  if is_windows ; then
+    DIR=$(cygpath -w "$(pwd)"/"$short_dir")
+  else
+    DIR="$short_dir"
+  fi
+  
   if is_windows; then
-    DIR=$(cygpath -w "$(pwd)"/vale)
     # Instead of invoking cmd.exe /c, which would force us to
     # rely on its flaky semantics for double quotes,
     # we go through a batch file.
@@ -734,24 +875,36 @@ run_scons () {
     cat > "$SCONS_INVOKE_FILE" <<EOF
 call $VS_ENV_CMD
 cd "$DIR"
-call scons.bat $cmd $parallel_opt
 EOF
+    if command -v scons.bat > /dev/null 2>&1 ; then
+      echo "call scons.bat $cmd $parallel_opt" >> "$SCONS_INVOKE_FILE"
+    else
+      PYDIR=$(cygpath -d $(windows_scons_python_dir))
+      echo "$PYDIR/python.exe $PYDIR/Scripts/scons.py $cmd $parallel_opt" >> "$SCONS_INVOKE_FILE"
+    fi
     chmod +x "$SCONS_INVOKE_FILE"
     "./$SCONS_INVOKE_FILE"
     SCONS_RETCODE=$?
     rm -f "$SCONS_INVOKE_FILE"
     return $SCONS_RETCODE
   else
-    scons -C vale $cmd $parallel_opt
+    python$SCONS_PYTHON_MAJOR_MINOR $(which scons) -C "$DIR" $cmd $parallel_opt
   fi
 }
 
-build_vale () {
-    echo "Skipping Vale"
+run_hacl_vale_scons () {
+  run_scons hacl-star/vale "--FSTAR-MY-VERSION $1 --FSTAR-EXTRACT"
 }
 
-clean_vale () {
-  run_scons "--clean"
+clean_hacl () {
+  for f in \
+    hacl-star/{code,secure_api,providers} \
+  ; do
+    if test -d "$f" ; then
+      make -C "$f" clean
+    fi
+  done
+  run_hacl_vale_scons "--clean"
 }
 
 setup_env () {
@@ -800,10 +953,6 @@ set_windows () {
 set_opt () {
   # Picked up by pretty much all the Makefiles
   export CFLAGS="-funroll-loops -fomit-frame-pointer -O3"
-  # Set by the everest script in build_mitls below as CFLAGS
-  export MITLS_CFLAGS="-DREGION_STATISTICS -DUSE_HEAP_REGIONS -DLOG_TO_CHOICE -include regions.h $CFLAGS"
-  # Picked up by mitls-fstar/src/tls/Makefile.common
-  export MITLS_NODEBUG=1
 }
 
 set_openssl () {
@@ -813,31 +962,28 @@ set_openssl () {
 
 build_fstar () {
   make -C FStar/src/ocaml-output $parallel_opt && \
+  make -C FStar/ulib $parallel_opt && \
   make -C FStar/ulib/ml $parallel_opt
 }
 
+build_kremlin () {
+  # TODO: run the kremlin testsuite too
+  make -C kremlin $parallel_opt &&
+  make -C kremlin/kremlib $parallel_opt
+}
+
 build_hacl () {
-  make -C hacl-star/code/ extract-c $parallel_opt && \
-  make -C hacl-star/secure_api $parallel_opt && \
-  make -C hacl-star/providers $parallel_opt
+  make -C hacl-star $parallel_opt && \
+  make -C hacl-star test $parallel_opt
 }
 
 build_mitls () {
   CFLAGS="$MITLS_CFLAGS" \
   make -C mitls-fstar/libs/ffi $parallel_opt && \
   make -C mitls-fstar/src/pki $parallel_opt && \
-  make -C mitls-fstar/src/lowparse -f Makefile.LowParse $parallel_opt && \
-  make -C mitls-fstar/src/tls $parallel_opt && \
+  VERIFY_LOWPARSE=1 make -C mitls-fstar/src/tls $parallel_opt && \
   make -C mitls-fstar/apps/cmitls $parallel_opt && \
   make -C mitls-fstar/apps/quicMinusNet $parallel_opt
-}
-
-build_quackyducky () {
-  make -C quackyducky gen $parallel_opt
-}
-
-build_kremlin () {
-  make -C kremlin $parallel_opt
 }
 
 do_make ()
@@ -849,14 +995,13 @@ do_make ()
   declare -A build_commands
   build_commands[FStar]="build_fstar"
   build_commands[kremlin]="build_kremlin"
-#  build_commands[MLCrypto]="make -C MLCrypto $parallel_opt"
-#  build_commands[hacl-star]="build_hacl"
-#  build_commands[mitls-fstar]="build_mitls"
-#  build_commands[vale]="build_vale"
-  build_commands[quackyducky]="build_quackyducky"
+  build_commands[MLCrypto]="make -C MLCrypto $parallel_opt"
+  build_commands[hacl-star]="build_hacl"
+  build_commands[mitls-fstar]="build_mitls"
+  build_commands[quackyducky]="make -C quackyducky $parallel_opt"
 
   # Order matters.
-  for p in FStar kremlin vale MLCrypto hacl-star mitls-fstar quackyducky; do
+  for p in FStar kremlin MLCrypto hacl-star quackyducky mitls-fstar; do
     # For individual components, we set ALL_PROJECTS=foo
     if [[ ${ALL_PROJECTS/$p/} == $ALL_PROJECTS ]]; then
       continue
@@ -864,7 +1009,11 @@ do_make ()
     separator
     blue "Rebuilding $p"
     blue "Running: ${build_commands[$p]}"
-    ${build_commands[$p]}
+    if ! ${build_commands[$p]} ; then
+      separator
+      red "FAILURE: build failed for $p"
+      return 2
+    fi
     separator
     echo -e "\n\n"
   done
@@ -878,65 +1027,30 @@ do_test () {
   separator
   blue "Running tests (commands shown below)"
   set -x
-#  hacl-star/secure_api/out/vale_aes_concrete_id/krml-test.exe
-#  hacl-star/secure_api/out/hacl_aes_concrete_id/krml-test.exe
-#  make -C hacl-star/secure_api -f Makefile.extract test $keep_going_opt
+  make -C kremlin/test $parallel_opt everything
+  IMPL_CHOICE=runtime_switch make -C hacl-star/secure_api -f Makefile.extract test $keep_going_opt
+  hacl-star/secure_api/out/runtime_switch/krml-test.exe
+  make -C quackyducky $parallel_opt test
   # These tests make assumption on their current working directory
-#  (cd mitls-fstar/src/tls && make $parallel_opt $keep_going_opt test)
-#  (cd mitls-fstar/apps/cmitls && make $keep_going_opt test)
-#  (cd mitls-fstar/apps/quicMinusNet && make $keep_going_opt test)
-  (cd quackyducky/out && NO_QD_VERIFY=1 make $parallel_opt test)
+  (cd mitls-fstar/src/tls && make $parallel_opt $keep_going_opt test)
+  (cd mitls-fstar/apps/cmitls && make $keep_going_opt test)
+  (cd mitls-fstar/apps/quicMinusNet && make $keep_going_opt test)
   set +x
   separator
-}
-
-do_verify_vale () {
-  if is_windows ; then
-    # Use the same Z3 for Dafny as for F*
-    # i.e. the one in the PATH
-    Z3PATH_UNIX=$(which z3.exe)
-    Z3PATH=$(cygpath -w "$Z3PATH_UNIX")
-    # Here the path to z3 might have whitespaces,
-    # so it must be enclosed into double quotes
-    # to be treated correctly by scons and Dafny.
-    # Moreover, it must fit in the single argument to
-    # run_scons, which is why we cannot quote the command
-    # as a member of the verify_commands array
-    run_scons "--DARGS=/z3exe:\"$Z3PATH\""
-  else
-    run_scons
-  fi
-}
-
-do_verify_lowparse () {
-  make -C mitls-fstar/src/lowparse -f Makefile.LowParse $parallel_opt -k &&
-  make -C mitls-fstar/src/lowparse verify-all $parallel_opt -k
-}
-
-do_verify_fstar () {
-  make -C FStar/ulib $parallel_opt
-}
-
-do_verify_kremlin () {
-  make -C kremlin/kremlib $parallel_opt
 }
 
 do_verify () {
   setup_env
 
   declare -A verify_commands
-  verify_commands[FStar]="do_verify_fstar"
-  verify_commands[kremlin]="do_verify_kremlin"
-#  verify_commands[hacl-star]="make -C hacl-star $parallel_opt -k verify"
-#  verify_commands[vale]="do_verify_vale"
-  verify_commands[mitls-fstar]="do_verify_lowparse"
-#  verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
-  verify_commands[quackyducky]="make -C quackyducky verify $parallel_opt -k"
+  verify_commands[FStar]="make -C FStar/src ulong $parallel_opt $keep_going_opt"
+  verify_commands[kremlin]="echo nothing to verify for kremlin"
+  verify_commands[hacl-star]="make -C hacl-star $parallel_opt -k verify"
+  verify_commands[mitls-fstar]="make -C mitls-fstar/src/tls verify $parallel_opt -k"
+  verify_commands[MLCrypto]="echo nothing to verify for MLCrypto"
+  verify_commands[quackyducky]="echo nothing to verify for quackyducky"
 
-  for p in FStar kremlin mitls-fstar quackyducky ; do
-    if [[ ${ALL_PROJECTS/$p/} == $ALL_PROJECTS ]]; then
-      continue
-    fi
+  for p in $ALL_PROJECTS; do
     separator
     blue "Running verification for: $p"
     ${verify_commands[$p]}
@@ -944,19 +1058,32 @@ do_verify () {
   done
 }
 
+do_clean_c ()
+{
+  setup_env
+  for d in kremlin/kremlib hacl-star/{providers,secure_api,code} \
+    mitls-fstar/src/tls
+  do
+    if test -d "$d" ; then
+      make -C "$d" clean-c
+    fi
+  done
+}
+
 do_clean ()
 {
+  setup_env
   for d in FStar/ulib/ml FStar/src{,/ocaml-output} \
     MLCrypto/{,openssl} \
+    quackyducky/out quackyducky \
+    mitls-fstar/src/tls \
     kremlin \
-    hacl-star/{code/curve25519,secure_api} \
-    quackyducky \
-    mitls-fstar/src/lowparse \
     ; do
-    make -C "$d" clean
+    if test -d "$d" ; then
+      make -C "$d" clean
+    fi
   done
-  make -C mitls-fstar/src/lowparse -f Makefile.LowParse clean
-  clean_vale
+  clean_hacl
 }
 
 do_snapshot ()
@@ -999,42 +1126,46 @@ do_drop ()
   setup_env
 
   blue "Dropping sources for Windows libraries"
-#  ./make-source-drop mitls-fstar/src/windows
+  ./make-source-drop mitls-fstar/src/windows
 }
 
 do_qbuild ()
 {
   setup_env
 
-#  blue "Building Windows libraries"
+  blue "Building Windows libraries"
   # Instead of invoking cmd.exe /c, which would force us to
   # rely on its flaky semantics for double quotes,
   # we go through a batch file.
-#  THIS_PID=$$
+  THIS_PID=$$
   # Find an unambiguous file name for our .bat file
-#  NMAKE_EXECS=0
-#  while
-#    NMAKE_INVOKE_FILE="everest$THIS_PID""nmake$NMAKE_EXECS"".bat" &&
-#    [[ -e "$NMAKE_INVOKE_FILE" ]]
-#  do
-#    NMAKE_EXECS=$(($NMAKE_EXECS + 1))
-#  done
+  NMAKE_EXECS=0
+  while
+    NMAKE_INVOKE_FILE="everest$THIS_PID""nmake$NMAKE_EXECS"".bat" &&
+    [[ -e "$NMAKE_INVOKE_FILE" ]]
+  do
+    NMAKE_EXECS=$(($NMAKE_EXECS + 1))
+  done
   # Then create, run and remove the .bat file
-#  DIR=$(cygpath -w "$(pwd)/mitls-fstar/src/windows")
-#  cat > "$NMAKE_INVOKE_FILE" <<EOF
-#call $VS_ENV_CMD
-#set MAKEFLAGS=
-#set KRML_HOME=..\..\..\kremlin
-#cd "$DIR\quiccrypto" &&^
-#call nmake -f makefile.vs &&^
-#cd "$DIR\mitls" &&^
-#call nmake -f makefile.vs
-#EOF
-#  chmod +x "$NMAKE_INVOKE_FILE"
-#  "./$NMAKE_INVOKE_FILE"
-#  NMAKE_RETCODE=$?
-#  rm -f "$NMAKE_INVOKE_FILE"
-#  return $NMAKE_RETCODE
+  DIR=$(cygpath -w "$(pwd)/mitls-fstar/src/windows")
+  cat > "$NMAKE_INVOKE_FILE" <<EOF
+call $VS_ENV_CMD
+set MAKEFLAGS=
+set KRML_HOME=..\..\..\kremlin
+cd "$DIR\kremlib" &&^
+call nmake -f makefile.vs &&^
+cd "$DIR\evercrypt" &&^
+call nmake -f makefile.vs &&^
+cd "$DIR\quiccrypto" &&^
+call nmake -f makefile.vs &&^
+cd "$DIR\mitls" &&^
+call nmake -f makefile.vs
+EOF
+  chmod +x "$NMAKE_INVOKE_FILE"
+  "./$NMAKE_INVOKE_FILE"
+  NMAKE_RETCODE=$?
+  rm -f "$NMAKE_INVOKE_FILE"
+  return $NMAKE_RETCODE
 }
 
 # ------------------------------------------------------------------------------
@@ -1055,9 +1186,9 @@ OPTION:
             This option is in two parts
             (-jn without space is NOT valid)
 
-  -k        Pass the -k (--keep-going) option to "make"
+  -windows  Build for Windows (Tune for MSVC compiler: optimize tail recursion, etc.)
 
-  -windows  Build for Windows (no native __int128_t, optimize tail recursion)
+  -k        Pass the -k (--keep-going) option to "make"
 
   -opt      Enable classic optimization flags and disable debugging. Note: this
             does not invalidate previous object files (e.g. in HACL*); consider
@@ -1067,7 +1198,7 @@ OPTION:
 
 PROJECT:
   restrict the subsequent commands to operate on one of the following:
-    FStar kremlin mitls-fstar hacl-star vale MLCrypto
+    FStar kremlin mitls-fstar hacl-star MLCrypto quackyducky
 
 COMMAND:
   check     ensure that all the required programs are found in path, install
@@ -1103,6 +1234,8 @@ COMMAND:
   drop      drop extraced C and assembly files from miTLS and Hacl*
 
   qbuild    build Windows libraries using Visual Studio
+
+  clean-c   only clean generated C files, useful when switching to -windows
 
   clean     clean all projects
 
@@ -1144,16 +1277,16 @@ while true; do
       set_opt
       ;;
 
-    -fnouint128)
-      red "Warning: the -fnouint128 option is deprecated; use -windows instead"
-      set_windows
-      ;;
-
     check)
       do_check
       ;;
 
     pull)
+      self_update
+      do_pull
+      ;;
+
+    pull_projects)
       do_pull
       ;;
 
@@ -1167,7 +1300,7 @@ while true; do
       break
       ;;
 
-    vale|FStar|mitls-fstar|kremlin|hacl-star|MLCrypto|quackyducky)
+    FStar|mitls-fstar|kremlin|hacl-star|MLCrypto|quackyducky)
       ALL_PROJECTS=$1
       ;;
 
@@ -1191,8 +1324,14 @@ while true; do
       do_clean
       ;;
 
+    clean-c)
+      do_clean_c
+      ;;
+
     verify)
-       do_verify
+#      Disable verification for now
+#      do_verify
+      red "The 'verify' command is obsoleted by 'make'. Just run './everest make' instead."
       ;;
 
     test)
