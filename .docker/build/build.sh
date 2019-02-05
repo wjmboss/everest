@@ -34,12 +34,12 @@ function everest_rebuild() {
     fi
 
     git clean -ffdx
-    $gnutime ./everest --yes -j $threads $1 check reset make &&
-        echo "done with check reset make, timing above" &&
-        $gnutime ./everest --yes -j $threads $1 test &&
-        echo "done with test, timing above" &&
-        $gnutime ./everest --yes -j $threads $1 verify &&
-        echo "done with verify, timing above"
+    $gnutime ./everest --yes -j $threads $1 check reset &&
+        echo "done with check reset, timing above" &&
+        $gnutime env OTHERFLAGS='--admit_smt_queries true' ./everest --yes -j $threads $1 FStar make kremlin make quackyducky make MLCrypto make hacl-star make &&
+        echo 'done with prereqs make, timing above' &&
+        $gnutime make -C mitls-fstar/src/tls -j $threads kremlin-all &&
+        echo 'done with make kremlin-all, timing above'
 }
 
 function everest_move() {
@@ -133,17 +133,17 @@ function exec_build() {
             if [[ "$OS" == "Windows_NT" ]]; then
                 everest_rebuild -windows &&
                 # collect sources and build with MSVC
-                ./everest drop qbuild &&
+#                ./everest drop qbuild &&
                 echo true >$status_file
             else
                 everest_rebuild && echo true >$status_file
             fi
-        elif [[ $target == "everest-move" ]]; then
-            if [[ "$OS" == "Windows_NT" ]]; then
-                everest_move && echo true >$status_file
-            else
-                echo "Invalid target"
-            fi
+#        elif [[ $target == "everest-move" ]]; then
+#            if [[ "$OS" == "Windows_NT" ]]; then
+#                everest_move && echo true >$status_file
+#            else
+#                echo "Invalid target"
+#            fi
         else
             echo "Invalid target"
         fi
