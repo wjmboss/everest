@@ -984,12 +984,9 @@ build_hacl () {
 }
 
 build_mitls () {
-  CFLAGS="$MITLS_CFLAGS" \
-  make -C mitls-fstar/libs/ffi $parallel_opt && \
-  make -C mitls-fstar/src/pki $parallel_opt && \
-  VERIFY_LOWPARSE=1 make -C mitls-fstar/src/tls $parallel_opt && \
-  make -C mitls-fstar/apps/cmitls $parallel_opt && \
-  make -C mitls-fstar/apps/quicMinusNet $parallel_opt
+  env OTHERFLAGS='--admit_smt_queries true' make -C mitls-fstar/src/lowparse -f Makefile.LowParse $parallel_opt &&
+  make -C mitls-fstar/src/tls $parallel_opt &&
+  make -C quackyducky $parallel_opt test
 }
 
 do_make ()
@@ -1007,7 +1004,7 @@ do_make ()
   build_commands[quackyducky]="make -C quackyducky $parallel_opt"
 
   # Order matters.
-  for p in FStar kremlin MLCrypto hacl-star quackyducky mitls-fstar; do
+  for p in FStar kremlin quackyducky mitls-fstar; do
     # For individual components, we set ALL_PROJECTS=foo
     if [[ ${ALL_PROJECTS/$p/} == $ALL_PROJECTS ]]; then
       continue
@@ -1347,7 +1344,9 @@ while true; do
       ;;
 
     test)
-      do_test
+#      Disable tests for now
+#      do_test
+      red "The 'test' command is obsoleted by 'make'. Just run './everest make' instead."
       ;;
 
     snapshot)
