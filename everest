@@ -845,6 +845,12 @@ do_forall ()
   done
 }
 
+do_cmd ()
+{
+    setup_env
+    "$@"
+}
+
 # OS-independent scons. chdir to $1, then passes $2 to scons.
 # The return status is that of the last command.
 run_scons () {
@@ -1297,6 +1303,12 @@ while true; do
     forall)
       shift
       do_forall "$@"
+      break
+      ;;
+
+    cmd)
+      shift
+      do_cmd "$@"
       break
       ;;
 
