@@ -968,8 +968,8 @@ set_openssl () {
 
 build_fstar () {
   make -C FStar/src/ocaml-output $parallel_opt && \
-  env OTHERFLAGS='--admit_smt_queries true' make -C FStar/ulib $parallel_opt #&& \
-  #make -C FStar/ulib/ml $parallel_opt
+  env OTHERFLAGS='--admit_smt_queries true' make -C FStar/ulib $parallel_opt && \
+  make -C FStar/ulib/ml $parallel_opt
 }
 
 build_kremlin () {
@@ -986,8 +986,8 @@ build_hacl () {
 build_mitls () {
   env OTHERFLAGS='--admit_smt_queries true' make -C mitls-fstar/src/lowparse verify-all $parallel_opt && \
   make -C mitls-fstar/src/parsers/ gen && \
-  env OTHERFLAGS='--admit_smt_queries true --__temp_fast_implicits' make -C mitls-fstar/src/parsers verify $parallel_opt && \
-  make -C mitls-fstar/src/tls $parallel_opt #&&
+  env OTHERFLAGS='--admit_smt_queries true --__temp_fast_implicits' make -C mitls-fstar/src/parsers verify $parallel_opt #&& \
+  #make -C mitls-fstar/src/tls $parallel_opt #&&
   #make -C quackyducky $parallel_opt test
 }
 
