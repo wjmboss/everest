@@ -816,7 +816,7 @@ do_reset ()
     git submodule update --init
     cd ..
   done
-  get_vale
+#  get_vale
 }
 
 do_merge ()
