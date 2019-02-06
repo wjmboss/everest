@@ -38,7 +38,7 @@ function everest_rebuild() {
         echo "done with check reset, timing above" &&
         $gnutime env OTHERFLAGS='--admit_smt_queries true' ./everest --yes -j $threads $1 FStar make kremlin make quackyducky make MLCrypto make hacl-star make &&
         echo 'done with prereqs make, timing above' &&
-        $gnutime make -C mitls-fstar/src/tls -j $threads kremlin-all &&
+        $gnutime ./everest cmd make -C mitls-fstar/src/tls -j $threads kremlin-all &&
         echo 'done with make kremlin-all, timing above'
 }
 
