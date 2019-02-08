@@ -974,7 +974,7 @@ build_fstar () {
 
 build_kremlin () {
   # TODO: run the kremlin testsuite too
-  make -C kremlin $parallel_opt &&
+  env OTHERFLAGS='--admit_smt_queries true' make -C kremlin $parallel_opt &&
   env OTHERFLAGS='--admit_smt_queries true' make -C kremlin/kremlib $parallel_opt
 }
 
@@ -984,11 +984,9 @@ build_hacl () {
 }
 
 build_mitls () {
-  env OTHERFLAGS='--admit_smt_queries true' make -C mitls-fstar/src/lowparse verify-all $parallel_opt && \
-  make -C mitls-fstar/src/parsers/ gen && \
-  env OTHERFLAGS='--admit_smt_queries true --__temp_fast_implicits' make -C mitls-fstar/src/parsers verify $parallel_opt #&& \
-  #make -C mitls-fstar/src/tls $parallel_opt #&&
-  #make -C quackyducky $parallel_opt test
+  env OTHERFLAGS='--admit_smt_queries true' make -C mitls-fstar/src/lowparse $parallel_opt &&
+  env OTHERFLAGS='--__temp_fast_implicits' make -C mitls-fstar/src/tls $parallel_opt &&
+  env OTHERFLAGS='--__temp_fast_implicits' make -C quackyducky $parallel_opt test
 }
 
 do_make ()
