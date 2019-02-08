@@ -985,7 +985,7 @@ build_hacl () {
 
 build_mitls () {
   env OTHERFLAGS='--admit_smt_queries true' make -C mitls-fstar/src/lowparse $parallel_opt &&
-  env OTHERFLAGS='--__temp_fast_implicits' make -C mitls-fstar/src/tls $parallel_opt &&
+  make -C mitls-fstar/src/tls $parallel_opt &&
   env OTHERFLAGS='--__temp_fast_implicits' make -C quackyducky $parallel_opt test
 }
 
