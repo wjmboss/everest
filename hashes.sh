@@ -1,7 +1,7 @@
 declare -A hashes
 declare -A branches
-hashes[mitls-fstar]=e4d62b284db8b07013ba87fd8ef65cfe9feccb14
-branches[mitls-fstar]=qd_benchmark
+hashes[mitls-fstar]=22a7e06d6db35bedf3defe65a929408d4867af2f
+branches[mitls-fstar]=adl_extensions
 hashes[quackyducky]=26dd56a32a32d6b71ea862096e4fa26b29e891bf
 branches[quackyducky]=taramana_lowparse
 hashes[FStar]=41e423e53ca468c81af1373406a4ce42bd2d70f1
