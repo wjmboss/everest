@@ -1,5 +1,6 @@
 #!/bin/bash
 set -x
+unset FSTAR_HOME KREMLIN_HOME MITLS_HOME QD_HOME
 EVEREST_THREADS=4
 ./everest reset &&
 env OTHERFLAGS='--admit_smt_queries true' ./everest -j $EVEREST_THREADS FStar make kremlin make quackyducky make &&
